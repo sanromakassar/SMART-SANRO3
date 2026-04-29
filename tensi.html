@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
+    <title>ANALISA TENSI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@3.9.0/dist/full.css" rel="stylesheet" type="text/css" />
+    
+    <!-- SERVER VUE -->
+    <script src="https://unpkg.com/vue@3.3.4/dist/vue.global.prod.js"></script>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* CSS Reset Standar PWA Mobile - Tema Futuristik Gelap */
+        html, body { 
+            overscroll-behavior-y: none; 
+            -webkit-tap-highlight-color: transparent; 
+            user-select: none; 
+            background-color: #0b1121;
+            color: #e2e8f0;
+        }
+        input:-webkit-autofill { 
+            -webkit-box-shadow: 0 0 0 30px #0f172a inset !important; 
+            -webkit-text-fill-color: #f8fafc !important;
+            background-color: transparent !important; 
+        }
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] { -moz-appearance: textfield; }
+        *::-webkit-scrollbar { display: none; }
+        * { -ms-overflow-style: none; scrollbar-width: none; }
+        [v-cloak] { display: none !important; }
+        
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        .neon-text-cyan { text-shadow: 0 0 10px rgba(6, 182, 212, 0.6); }
+        .neon-border { box-shadow: inset 0 0 10px rgba(6, 182, 212, 0.2), 0 0 15px rgba(6, 182, 212, 0.1); }
+    </style>
+</head>
+<body class="bg-[#0b1121] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#1e1b4b] via-[#0b1121] to-black min-h-screen">
+
+<!-- --- BAGIAN FRONTEND --- -->
+<script>
+// --- KONFIGURASI API ---
+// WAJIB DIISI dengan URL Web App Apps Script Anda untuk mengaktifkan koneksi Database (Mode Production). 
+// Jika kosong, aplikasi berjalan di mode Sandbox (Penyimpanan Lokal Browser).
+const GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzox79G7Ajft6KFX_ez7J9yGA03tn7aLDxNrQVm3ovlrRG2stD1B8UTw7SNvxgLA4bC/exec'; 
+
+const storage = {
+  save: (table, val) => {
+    return new Promise(async (resolve, reject) => {
+      if (!navigator.onLine) return reject('Offline');
+      const cleanVal = JSON.parse(JSON.stringify(val));
+      
+      if (GAS_ENDPOINT) {
+        const controller = new AbortController();
+        let timeout = setTimeout(() => { controller.abort(); reject('Timeout'); }, 60000);
+        try {
+          const response = await fetch(GAS_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'saveToGAS', payload: { table, val: cleanVal } }),
+            signal: controller.signal
+          });
+          clearTimeout(timeout);
+          const json = await response.json();
+          if (json.status === 'error') throw new Error(json.message);
+          resolve(json.data);
+        } catch(err) {
+          clearTimeout(timeout);
+          reject(err);
+        }
+      } else {
+        try {
+          let data = JSON.parse(localStorage.getItem(table)) || [];
+          if (!Array.isArray(data)) data = [];
+          const i = data.findIndex(x => x.id === cleanVal.id);
+          if (i > -1) data[i] = cleanVal; else data.push(cleanVal);
+          
+          try {
+            localStorage.setItem(table, JSON.stringify(data));
+          } catch (e) {
+            if (e.name === 'QuotaExceededError') {
+              data.splice(0, Math.ceil(data.length * 0.2));
+              localStorage.setItem(table, JSON.stringify(data));
+            } else throw e;
+          }
+          
+          resolve(true);
+        } catch (err) { reject(err); }
+      }
+    });
+  },
+  call: (funcName, ...args) => {
+      return new Promise(async (resolve, reject) => {
+          if (!navigator.onLine) return reject('Offline');
+          const cleanArgs = JSON.parse(JSON.stringify(args));
+          
+          if (GAS_ENDPOINT) {
+            const controller = new AbortController();
+            let timeout = setTimeout(() => { controller.abort(); reject('Timeout'); }, 60000);
+            try {
+              const response = await fetch(GAS_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: funcName, payload: cleanArgs }),
+                signal: controller.signal
+              });
+              clearTimeout(timeout);
+              const json = await response.json();
+              if (json.status === 'error') throw new Error(json.message);
+              resolve(json.data);
+            } catch(err) {
+              clearTimeout(timeout);
+              reject(err);
+            }
+          } else {
+              if(funcName === 'getInitialData') {
+                  try {
+                      let localRecords = JSON.parse(localStorage.getItem('Analisa')) || [];
+                      let localRumus = JSON.parse(localStorage.getItem('Rumus_Tensi')) || [];
+                      resolve({ 
+                          appName: 'ANALISA TENSI', 
+                          logoUrl: 'https://drive.google.com/thumbnail?id=1g7iMT64M6KUk7No6D-rWu_B71uJtCKsR', 
+                          records: Array.isArray(localRecords) ? localRecords : [], 
+                          rumusRecords: Array.isArray(localRumus) ? localRumus : []
+                      });
+                  } catch (e) { reject(e); }
+                  return;
+              }
+              if(funcName === 'login') {
+                  if(cleanArgs[0]==='admin' && cleanArgs[1]==='password123') { resolve({id:'1', username:'admin', role:'admin'}); return; }
+                  else { reject(new Error('Kredensial salah')); return; }
+              }
+              if(funcName === 'deleteAnalisa') {
+                  let d = JSON.parse(localStorage.getItem('Analisa')) || [];
+                  localStorage.setItem('Analisa', JSON.stringify(d.filter(x => x.id !== cleanArgs[0])));
+                  resolve(true); return;
+              }
+              if(funcName === 'deleteRumus') {
+                  let d = JSON.parse(localStorage.getItem('Rumus_Tensi')) || [];
+                  localStorage.setItem('Rumus_Tensi', JSON.stringify(d.filter(x => x.id !== cleanArgs[0])));
+                  resolve(true); return;
+              }
+              resolve(true);
+          }
+      });
+  }
+};
+</script>
+
+<div id="app" v-cloak class="w-full max-w-md mx-auto min-h-[100dvh] overflow-x-hidden p-[env(safe-area-inset-top)_env(safe-area-inset-right)_env(safe-area-inset-bottom)_env(safe-area-inset-left)] relative">
+    
+    <!-- Splash Screen -->
+    <div id="splash-screen" v-if="ui.splash" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0b1121] transition-opacity duration-500">
+        <div class="relative">
+            <div class="absolute inset-0 bg-cyan-500 rounded-full blur-[50px] opacity-20 animate-pulse"></div>
+            <img :src="config.logoUrl" @error="handleLogoError" class="w-32 h-32 object-contain relative z-10 mb-4" alt="Logo">
+        </div>
+        <h1 class="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 tracking-widest text-center px-6 uppercase">{{ config.appName }}</h1>
+        <div class="mt-8 loading loading-infinity loading-lg text-cyan-500"></div>
+        <p class="mt-4 text-[10px] text-cyan-500/50 uppercase tracking-[0.3em] font-mono">Inisiasi Sistem Tensi...</p>
+    </div>
+
+    <!-- Dynamic Island / Toast -->
+    <div v-if="ui.toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-fit max-w-[90%] bg-slate-900/90 border border-cyan-500/50 text-cyan-50 px-6 py-3 rounded-full shadow-[0_0_20px_rgba(6,182,212,0.3)] backdrop-blur-md flex items-center gap-3 transition-all animate-fade-in-down">
+        <i :class="ui.toast.icon" class="text-lg text-cyan-400"></i>
+        <span class="text-sm font-bold tracking-wider text-wrap">{{ ui.toast.message }}</span>
+    </div>
+
+    <!-- Navbar -->
+    <div class="sticky top-0 z-40 glass-panel px-4 py-3 flex justify-between items-center rounded-b-3xl mb-4 shadow-xl">
+        <div class="flex items-center gap-3 w-full">
+            <img :src="config.logoUrl" @error="handleLogoError" class="w-9 h-9 object-contain rounded-full shadow-md" alt="Logo">
+            <h1 class="text-xs sm:text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 leading-tight tracking-wider uppercase w-full">{{ ['pasien', 'detail_pasien', 'database_tensi', 'detail_rumus'].includes(ui.activeView) ? 'SYSTEM TERMINAL' : config.appName }}</h1>
+        </div>
+        <button v-if="ui.activeView === 'public'" @click="ui.activeView = 'login'" class="btn btn-ghost btn-circle text-cyan-500 hover:bg-cyan-900/30 hover:text-cyan-300">
+            <i class="fa-solid fa-fingerprint text-xl"></i>
+        </button>
+        <button v-if="auth.user && ui.activeView !== 'public'" @click="processLogout" class="btn btn-ghost btn-circle text-rose-500 hover:bg-rose-900/30 hover:text-rose-300">
+            <i class="fa-solid fa-power-off text-xl"></i>
+        </button>
+    </div>
+
+    <!-- MAIN VIEW: SCANNER -->
+    <div v-if="ui.activeView === 'public'" class="p-5 pb-28 space-y-6">
+        
+        <div class="relative overflow-hidden bg-slate-900/60 p-6 rounded-3xl border border-indigo-500/30 shadow-[0_0_25px_rgba(79,70,229,0.15)] backdrop-blur-sm">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-[40px] -mr-10 -mt-10 pointer-events-none"></div>
+            <h2 class="text-lg font-black text-cyan-300 mb-1 uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-satellite-dish"></i> DATA BIOMETRIK</h2>
+            <p class="text-xs text-indigo-200/70 font-medium">Masukkan parameter tubuh untuk analisa tensi instan.</p>
+        </div>
+
+        <div class="space-y-5">
+            <div class="form-control w-full">
+                <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Nama Subjek</span></label>
+                <input type="text" v-model="form.nama" @input="form.nama = form.nama.toUpperCase()" @focus="scrollToView" class="input input-bordered w-full rounded-2xl text-base bg-slate-900/60 border-cyan-900/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 placeholder-slate-600 transition-all shadow-inner" placeholder="IDENTITAS (OPSIONAL)">
+            </div>
+            
+            <div class="form-control w-full">
+                <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Jenis Kelamin</span></label>
+                <select v-model="form.jenis_kelamin" @focus="scrollToView" class="select select-bordered w-full rounded-2xl text-base bg-slate-900/60 border-cyan-900/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 transition-all shadow-inner">
+                    <option disabled value="">PILIH JENIS KELAMIN</option>
+                    <option value="Laki-laki">LAKI-LAKI</option>
+                    <option value="Perempuan">PEREMPUAN</option>
+                </select>
+            </div>
+
+            <div class="form-control w-full">
+                <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Usia (Tahun)</span></label>
+                <input type="number" v-model="form.usia" @focus="scrollToView" class="input input-bordered w-full rounded-2xl text-base bg-slate-900/60 border-cyan-900/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 placeholder-slate-600 transition-all shadow-inner" placeholder="CONTOH: 35">
+            </div>
+
+            <div class="form-control w-full">
+                <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Nomor WhatsApp</span></label>
+                <input type="text" inputmode="numeric" v-model="form.whatsapp" @focus="scrollToView" class="input input-bordered w-full rounded-2xl text-base bg-slate-900/60 border-cyan-900/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 placeholder-slate-600 transition-all shadow-inner" placeholder="CONTOH: 081234567890">
+            </div>
+
+            <!-- BLE Buttons -->
+            <div class="grid grid-cols-2 gap-2 mt-2">
+                <button @click="connectBluetooth" :disabled="ui.isBleConnecting" class="btn border border-cyan-500/50 bg-cyan-900/20 text-cyan-400 hover:bg-cyan-500 hover:text-white hover:border-cyan-400 rounded-2xl w-full text-[10px] tracking-widest uppercase flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.15)] transition-all px-2">
+                    <span v-if="ui.isBleConnecting" class="loading loading-spinner loading-xs text-cyan-400"></span>
+                    <i v-else class="fa-brands fa-bluetooth-b"></i>
+                    <span v-if="!ui.isBleConnecting">Data Tensi</span>
+                    <span v-else>Proses...</span>
+                </button>
+                <button @click="connectTimbangan" :disabled="ui.isBleConnectingTimbangan" class="btn border border-emerald-500/50 bg-emerald-900/20 text-emerald-400 hover:bg-emerald-500 hover:text-white hover:border-emerald-400 rounded-2xl w-full text-[10px] tracking-widest uppercase flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.15)] transition-all px-2">
+                    <span v-if="ui.isBleConnectingTimbangan" class="loading loading-spinner loading-xs text-emerald-400"></span>
+                    <i v-else class="fa-brands fa-bluetooth-b"></i>
+                    <span v-if="!ui.isBleConnectingTimbangan">Data Timbangan</span>
+                    <span v-else>Proses...</span>
+                </button>
+            </div>
+            <span class="text-[8px] text-cyan-500/50 text-center mt-1 block font-mono uppercase tracking-widest">Pastikan Bluetooth Aktif & Mode Pairing</span>
+
+            <div class="grid grid-cols-2 gap-4 mt-2">
+                <div class="form-control w-full">
+                    <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Sistolik (Atas)</span></label>
+                    <div class="relative">
+                        <input type="number" v-model="form.sistolik" @focus="scrollToView" class="input input-bordered w-full rounded-2xl text-base bg-slate-900/60 border-cyan-900/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 placeholder-slate-600 transition-all shadow-inner pr-14" placeholder="0">
+                        <span class="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-cyan-600 uppercase tracking-widest">mmHg</span>
+                    </div>
+                </div>
+                <div class="form-control w-full">
+                    <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Diastolik (Bawah)</span></label>
+                    <div class="relative">
+                        <input type="number" v-model="form.diastolik" @focus="scrollToView" class="input input-bordered w-full rounded-2xl text-base bg-slate-900/60 border-cyan-900/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 placeholder-slate-600 transition-all shadow-inner pr-14" placeholder="0">
+                        <span class="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-cyan-600 uppercase tracking-widest">mmHg</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="form-control w-full">
+                    <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Detak Jantung</span></label>
+                    <div class="relative">
+                        <input type="number" v-model="form.detak_jantung" @focus="scrollToView" class="input input-bordered w-full rounded-2xl text-base bg-slate-900/60 border-cyan-900/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 placeholder-slate-600 transition-all shadow-inner pr-12" placeholder="0">
+                        <span class="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-cyan-600 uppercase tracking-widest">bpm</span>
+                    </div>
+                </div>
+                <div class="form-control w-full">
+                    <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Berat Badan</span></label>
+                    <div class="relative">
+                        <input type="number" v-model="form.berat_badan" @focus="scrollToView" class="input input-bordered w-full rounded-2xl text-base bg-slate-900/60 border-cyan-900/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 placeholder-slate-600 transition-all shadow-inner pr-12" placeholder="0">
+                        <span class="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-cyan-600 uppercase tracking-widest">kg</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-control w-full">
+                <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Detail Penyakit / Keluhan Tambahan</span></label>
+                <textarea v-model="form.keluhan" @focus="scrollToView" class="textarea textarea-bordered w-full rounded-2xl text-base bg-slate-900/60 border-cyan-900/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 placeholder-slate-600 transition-all shadow-inner" placeholder="Tuliskan keluhan yang dirasakan (misal: pusing, kaku kuduk, lemas)..."></textarea>
+            </div>
+
+            <button @click="processAnalisa" :disabled="ui.loading" class="btn w-full rounded-2xl mt-6 border-none bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-black tracking-widest uppercase shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-all">
+                <span v-if="ui.loading" class="loading loading-spinner text-cyan-200"></span>
+                <span v-else>Jalankan Analisa Tensi <i class="fa-solid fa-microchip ml-2"></i></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- VIEW: DATA PASIEN LIST -->
+    <div v-if="ui.activeView === 'pasien'" class="p-5 pb-24 space-y-6 min-h-screen">
+        <div class="bg-slate-900/60 rounded-3xl border border-emerald-900/40 shadow-[0_0_20px_rgba(16,185,129,0.1)] overflow-hidden">
+            <div class="p-4 border-b border-emerald-900/40 bg-slate-900/80 flex justify-between items-center backdrop-blur-sm">
+                <h3 class="font-bold text-emerald-50 text-xs tracking-widest uppercase"><i class="fa-solid fa-users mr-2 text-emerald-400"></i> Data Pasien</h3>
+                <span class="badge bg-emerald-600/20 text-emerald-300 border-emerald-500/30 badge-sm font-mono">{{ data.records.length }} DATA</span>
+            </div>
+            <div class="p-0">
+                <div v-if="data.records.length === 0" class="p-10 text-center text-slate-600">
+                    <i class="fa-solid fa-folder-open text-4xl mb-3 opacity-50"></i>
+                    <p class="text-[10px] tracking-widest uppercase font-mono">Belum Ada Data</p>
+                </div>
+                <ul v-else class="divide-y divide-emerald-900/30">
+                    <li v-for="rec in sortedRecords" :key="'pasien-'+rec.id" @click="openDetail(rec)" class="p-4 hover:bg-emerald-900/20 transition-colors cursor-pointer group">
+                        <div class="flex justify-between items-center gap-2">
+                            <div>
+                                <h4 class="font-bold text-emerald-50 text-sm group-hover:text-emerald-300 transition-colors">{{ rec.nama || 'ANONIM' }} <span v-if="rec.usia && rec.usia !== '-'" class="text-xs font-normal text-slate-400 font-mono">[{{ rec.usia }}Y]</span></h4>
+                                <p class="text-[10px] font-mono text-emerald-300/70 mt-1"><i class="fa-regular fa-clock mr-1"></i> {{ formatDate(rec.tanggal) }}</p>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-emerald-500/50 group-hover:text-emerald-400 transition-colors"></i>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: DETAIL PASIEN -->
+    <div v-if="ui.activeView === 'detail_pasien' && ui.selectedPasien" class="p-5 pb-24 space-y-6 min-h-screen animate-fade-in-up">
+        <div class="bg-slate-900/60 rounded-3xl border border-emerald-900/40 shadow-[0_0_20px_rgba(16,185,129,0.15)] overflow-hidden p-6 relative">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-[40px] -mr-10 -mt-10 pointer-events-none"></div>
+            
+            <h2 class="text-lg font-black text-emerald-400 mb-4 uppercase tracking-widest border-b border-emerald-900/50 pb-3 flex items-center gap-2">
+                <i class="fa-solid fa-address-card"></i> Detail Pasien
+            </h2>
+            
+            <div class="space-y-3 text-sm relative z-10">
+                <div class="flex flex-col border-b border-slate-800/50 pb-2">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Nama Subjek</span>
+                    <span class="text-emerald-50 font-bold">{{ ui.selectedPasien?.nama || '-' }}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4 border-b border-slate-800/50 pb-2">
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Jenis Kelamin</span>
+                        <span class="text-emerald-50">{{ ui.selectedPasien?.jenis_kelamin || '-' }}</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Usia</span>
+                        <span class="text-emerald-50 font-mono">{{ ui.selectedPasien?.usia || '-' }} Tahun</span>
+                    </div>
+                </div>
+                <div class="flex flex-col border-b border-slate-800/50 pb-2">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Nomor WhatsApp</span>
+                    <span class="text-emerald-50 font-mono">{{ ui.selectedPasien?.whatsapp || '-' }}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4 border-b border-slate-800/50 pb-2">
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tensi (Sys/Dia)</span>
+                        <span class="text-cyan-400 font-black font-mono">{{ ui.selectedPasien?.sistolik || '-' }}/{{ ui.selectedPasien?.diastolik || '-' }} mmHg</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Detak Jantung</span>
+                        <span class="text-cyan-400 font-black font-mono">{{ ui.selectedPasien?.detak_jantung || '-' }} bpm</span>
+                    </div>
+                </div>
+                <div class="flex flex-col border-b border-slate-800/50 pb-2">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Berat Badan</span>
+                    <span class="text-emerald-50 font-mono">{{ ui.selectedPasien?.berat_badan || '-' }} kg</span>
+                </div>
+                <div class="flex flex-col pb-2">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Detail Penyakit / Keluhan</span>
+                    <span class="text-emerald-50 text-xs leading-relaxed">{{ ui.selectedPasien?.keluhan || '-' }}</span>
+                </div>
+            </div>
+
+            <!-- Analisa Result Section -->
+            <div v-if="ui.showDetailAnalisa" class="mt-6 p-5 rounded-2xl border bg-black/40 backdrop-blur-md relative overflow-hidden transition-all duration-500 shadow-inner border-emerald-900/50">
+                <div class="flex flex-col gap-2 relative z-10">
+                    <h3 class="font-bold text-[10px] opacity-70 uppercase tracking-widest text-emerald-400 border-b border-emerald-900/50 pb-2 mb-1">Hasil Analisa Tensi</h3>
+                    <div class="text-xs font-medium leading-relaxed opacity-90 text-slate-300 whitespace-pre-line text-justify" v-html="formatPesanUI(computedDetailPesan)"></div>
+                </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="grid grid-cols-2 gap-2 mt-4 relative z-10">
+                <button @click="ui.activeView = 'pasien'" class="btn btn-sm h-12 rounded-xl bg-slate-800 text-slate-300 border-none hover:bg-slate-700 text-[10px] tracking-widest uppercase shadow-[0_4px_10px_rgba(0,0,0,0.3)]">Cancel</button>
+                <button @click="runDetailAnalisa" class="btn btn-sm h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white border-none font-bold text-[10px] tracking-widest uppercase shadow-[0_0_15px_rgba(16,185,129,0.4)]">Tampilkan Analisa</button>
+                <button @click="kirimWA" class="btn btn-sm h-12 rounded-xl bg-[#25D366]/20 text-[#25D366] border border-[#25D366]/50 hover:bg-[#25D366] hover:text-white text-[10px] tracking-widest uppercase shadow-[0_4px_10px_rgba(37,211,102,0.2)]"><i class="fa-brands fa-whatsapp text-sm mr-1"></i> WA</button>
+                <button @click="confirmDeleteDetail(ui.selectedPasien?.id)" class="btn btn-sm h-12 rounded-xl bg-rose-900/50 text-rose-400 border border-rose-900/50 hover:bg-rose-800 hover:text-white text-[10px] tracking-widest uppercase shadow-[0_4px_10px_rgba(225,29,72,0.2)]">Hapus</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: LOGIN ADMIN -->
+    <div v-if="ui.activeView === 'login'" class="p-6 flex flex-col justify-center min-h-[70dvh] space-y-6 animate-fade-in-up">
+        <div class="text-center mb-6">
+            <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-slate-900/80 border border-cyan-500/30 text-cyan-400 mb-4 shadow-[0_0_25px_rgba(6,182,212,0.2)]">
+                <i class="fa-solid fa-shield-halved text-4xl"></i>
+            </div>
+            <h2 class="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 tracking-wider uppercase">Otoritas Sistem</h2>
+            <p class="text-[10px] text-indigo-200/70 mt-2 tracking-widest uppercase font-mono">Autentikasi Diperlukan</p>
+        </div>
+
+        <div class="space-y-4 bg-slate-900/40 p-6 rounded-3xl border border-cyan-900/30 shadow-inner backdrop-blur-sm">
+            <div class="form-control w-full">
+                <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">ID Akses</span></label>
+                <input type="text" v-model="loginForm.username" @focus="scrollToView" class="input input-bordered w-full rounded-2xl text-base bg-black/40 border-cyan-900/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 placeholder-slate-700 transition-all font-mono" placeholder="ROOT_ID">
+            </div>
+            <div class="form-control w-full">
+                <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Kode Keamanan</span></label>
+                <div class="relative w-full">
+                    <input :type="loginForm.showPassword ? 'text' : 'password'" v-model="loginForm.password" @focus="scrollToView" class="input input-bordered w-full rounded-2xl text-base bg-black/40 border-cyan-900/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 placeholder-slate-700 transition-all pr-12 font-mono" placeholder="********">
+                    <button @click="loginForm.showPassword = !loginForm.showPassword" class="absolute right-3 top-1/2 -translate-y-1/2 text-cyan-600 hover:text-cyan-400 p-2 transition-colors">
+                        <i class="fa-solid" :class="loginForm.showPassword ? 'fa-eye-slash' : 'fa-eye'"></i>
+                    </button>
+                </div>
+            </div>
+            <button @click="processLogin" :disabled="ui.loading" class="btn w-full rounded-2xl mt-4 border-none bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-black tracking-widest uppercase shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                <span v-if="ui.loading" class="loading loading-spinner text-cyan-200"></span>
+                <span v-else>Bypass <i class="fa-solid fa-unlock-keyhole ml-2"></i></span>
+            </button>
+            <button @click="ui.activeView = 'public'" class="btn btn-ghost w-full rounded-2xl text-slate-500 hover:text-cyan-400 text-xs tracking-widest uppercase mt-2">Batalkan</button>
+        </div>
+    </div>
+
+    <!-- VIEW: DATABASE RUMUS -->
+    <div v-if="ui.activeView === 'database_tensi' && auth.user?.role === 'admin'" class="p-5 pb-24 space-y-6 min-h-screen">
+        <div class="bg-slate-900/60 rounded-3xl border border-cyan-900/40 shadow-[0_0_20px_rgba(6,182,212,0.1)] overflow-hidden">
+            <div class="p-4 border-b border-cyan-900/40 bg-slate-900/80 flex justify-between items-center backdrop-blur-sm">
+                <h3 class="font-bold text-cyan-50 text-xs tracking-widest uppercase"><i class="fa-solid fa-flask mr-2 text-cyan-400"></i> Database Tensi</h3>
+                <button @click="ui.showFormRumus = !ui.showFormRumus" class="btn btn-xs bg-cyan-600/20 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/40 border">+ Rumus</button>
+            </div>
+
+            <!-- FORM RUMUS -->
+            <div v-if="ui.showFormRumus" class="p-4 border-b border-cyan-900/40 bg-black/40 space-y-4 animate-fade-in-down">
+                <div class="form-control w-full">
+                    <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Kategori (Misal: Normal)</span></label>
+                    <input type="text" v-model="formRumus.kategori" class="input input-sm input-bordered w-full rounded-xl text-base bg-slate-900/60 border-cyan-900/50 text-cyan-50 focus:border-cyan-400">
+                </div>
+                <div class="form-control w-full">
+                    <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Rumus Logika</span></label>
+                    <textarea v-model="formRumus.rumus" class="textarea textarea-bordered w-full rounded-xl text-base bg-slate-900/60 border-cyan-900/50 text-cyan-50 font-mono focus:border-cyan-400" placeholder="sis < 120 && dia < 80"></textarea>
+                </div>
+                <div class="form-control w-full">
+                    <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Pesan Diagnosa</span></label>
+                    <textarea v-model="formRumus.pesan" class="textarea textarea-bordered w-full rounded-xl text-base bg-slate-900/60 border-cyan-900/50 text-cyan-50 focus:border-cyan-400"></textarea>
+                </div>
+                <div class="form-control w-full">
+                    <label class="label pb-1"><span class="label-text font-bold text-cyan-400/80 uppercase text-[10px] tracking-widest">Warna Indikator</span></label>
+                    <select v-model="formRumus.warna" class="select select-sm select-bordered w-full rounded-xl text-base bg-slate-900/60 border-cyan-900/50 text-cyan-50 focus:border-cyan-400">
+                        <option value="emerald">Hijau (Aman)</option>
+                        <option value="yellow">Kuning (Peringatan Ringan)</option>
+                        <option value="orange">Oranye (Peringatan Sedang)</option>
+                        <option value="red">Merah (Bahaya)</option>
+                        <option value="rose">Merah Darah (Kritis)</option>
+                    </select>
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button @click="processSaveRumus" :disabled="ui.loading" class="btn btn-sm flex-1 bg-cyan-600 hover:bg-cyan-500 text-white border-none rounded-xl text-[10px] tracking-widest uppercase shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                        <span v-if="ui.loading" class="loading loading-spinner loading-xs"></span>
+                        <span v-else>Simpan</span>
+                    </button>
+                    <button @click="ui.showFormRumus = false; resetFormRumus()" class="btn btn-sm flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border-none rounded-xl text-[10px] tracking-widest uppercase">Batal</button>
+                </div>
+            </div>
+
+            <!-- LIST RUMUS -->
+            <div class="p-0">
+                <div v-if="data.rumusRecords.length === 0 && !ui.showFormRumus" class="p-10 text-center text-slate-600">
+                    <i class="fa-solid fa-code text-4xl mb-3 opacity-50"></i>
+                    <p class="text-[10px] tracking-widest uppercase font-mono">Database Keilmuan Kosong</p>
+                </div>
+                <ul v-else class="divide-y divide-cyan-900/30">
+                    <li v-for="rumus in data.rumusRecords" :key="'rumus-'+rumus.id" @click="openDetailRumus(rumus)" class="p-4 hover:bg-cyan-900/20 transition-colors cursor-pointer group">
+                        <div class="flex justify-between items-center gap-2">
+                            <div class="flex-1">
+                                <h4 class="font-bold text-cyan-50 text-sm flex items-center gap-2">
+                                    <div class="w-2 h-2 rounded-full shadow-[0_0_5px_currentColor]" :class="getColorClass(rumus.warna)"></div>
+                                    {{ rumus.kategori }}
+                                </h4>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-cyan-500/50 group-hover:text-cyan-400 transition-colors"></i>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: DETAIL RUMUS -->
+    <div v-if="ui.activeView === 'detail_rumus' && ui.selectedRumus && auth.user?.role === 'admin'" class="p-5 pb-24 space-y-6 min-h-screen animate-fade-in-up">
+        <div class="bg-slate-900/60 rounded-3xl border border-cyan-900/40 shadow-[0_0_20px_rgba(6,182,212,0.15)] overflow-hidden p-6 relative">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-[40px] -mr-10 -mt-10 pointer-events-none"></div>
+            
+            <h2 class="text-lg font-black text-cyan-400 mb-4 uppercase tracking-widest border-b border-cyan-900/50 pb-3 flex items-center gap-2">
+                <i class="fa-solid fa-flask"></i> Detail Keilmuan
+            </h2>
+            
+            <div class="space-y-3 text-sm relative z-10">
+                <div class="flex flex-col border-b border-slate-800/50 pb-2">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Kategori</span>
+                    <span class="text-cyan-50 font-bold flex items-center gap-2 mt-1">
+                        <div class="w-2 h-2 rounded-full shadow-[0_0_5px_currentColor]" :class="getColorClass(ui.selectedRumus?.warna)"></div>
+                        {{ ui.selectedRumus?.kategori || '-' }}
+                    </span>
+                </div>
+                <div class="flex flex-col border-b border-slate-800/50 pb-2">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Rumus Logika</span>
+                    <span class="text-cyan-400 font-mono text-xs bg-black/50 p-2 rounded-lg border border-cyan-900/50 mt-1 break-all">{{ ui.selectedRumus?.rumus || '-' }}</span>
+                </div>
+                <div class="flex flex-col pb-2">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Pesan Diagnosa</span>
+                    <span class="text-cyan-50 text-xs leading-relaxed whitespace-pre-line mt-1 text-justify">{{ ui.selectedRumus?.pesan || '-' }}</span>
+                </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="grid grid-cols-3 gap-2 mt-8 relative z-10">
+                <button @click="ui.activeView = 'database_tensi'" class="btn btn-sm h-12 rounded-xl bg-slate-800 text-slate-300 border-none hover:bg-slate-700 text-[10px] tracking-widest uppercase shadow-[0_4px_10px_rgba(0,0,0,0.3)]">Cancel</button>
+                <button @click="editRumus(ui.selectedRumus)" class="btn btn-sm h-12 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white border-none font-bold text-[10px] tracking-widest uppercase shadow-[0_0_15px_rgba(6,182,212,0.4)]">Edit</button>
+                <button @click="confirmDeleteRumus(ui.selectedRumus?.id)" :disabled="ui.loading" class="btn btn-sm h-12 rounded-xl bg-rose-900/50 text-rose-400 border border-rose-900/50 hover:bg-rose-800 hover:text-white text-[10px] tracking-widest uppercase shadow-[0_4px_10px_rgba(225,29,72,0.2)]">Hapus</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Nav Guard -->
+    <div v-if="!ui.isKeyboardVisible && ui.activeView !== 'login'" class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-50 glass-panel rounded-t-3xl border-t border-cyan-900/50 shadow-[0_-10px_30px_rgba(0,0,0,0.5)] px-4 py-3 flex justify-around items-center pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+        <button @click="ui.activeView = 'public'" class="flex flex-col items-center justify-center gap-1 transition-colors relative cursor-pointer" :class="ui.activeView === 'public' ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-400'">
+            <div v-if="ui.activeView === 'public'" class="absolute -top-3 w-8 h-1 bg-cyan-400 rounded-full shadow-[0_0_10px_rgba(6,182,212,0.8)]"></div>
+            <i class="fa-solid fa-satellite-dish text-xl mb-1 mt-1"></i>
+            <span class="text-[8px] font-black tracking-widest uppercase">Scan</span>
+        </button>
+        <button v-if="auth.user" @click="ui.activeView = 'pasien'" class="flex flex-col items-center justify-center gap-1 transition-colors relative cursor-pointer" :class="ui.activeView === 'pasien' || ui.activeView === 'detail_pasien' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-400'">
+            <div v-if="ui.activeView === 'pasien' || ui.activeView === 'detail_pasien'" class="absolute -top-3 w-8 h-1 bg-emerald-400 rounded-full shadow-[0_0_10px_rgba(52,211,153,0.8)]"></div>
+            <i class="fa-solid fa-address-book text-xl mb-1 mt-1"></i>
+            <span class="text-[8px] font-black tracking-widest uppercase">Pasien</span>
+        </button>
+        <button v-if="auth.user && auth.user.role === 'admin'" @click="ui.activeView = 'database_tensi'" class="flex flex-col items-center justify-center gap-1 transition-colors relative cursor-pointer" :class="ui.activeView === 'database_tensi' || ui.activeView === 'detail_rumus' ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-400'">
+            <div v-if="ui.activeView === 'database_tensi' || ui.activeView === 'detail_rumus'" class="absolute -top-3 w-8 h-1 bg-cyan-400 rounded-full shadow-[0_0_10px_rgba(6,182,212,0.8)]"></div>
+            <i class="fa-solid fa-flask text-xl mb-1 mt-1"></i>
+            <span class="text-[8px] font-black tracking-widest uppercase">Tensi DB</span>
+        </button>
+    </div>
+
+</div>
+
+<script>
+const { createApp, reactive, computed, onMounted } = Vue;
+
+const app = createApp({
+    setup() {
+        const ui = reactive({ 
+            splash: true, 
+            activeView: 'public', 
+            loading: false, 
+            toast: null, 
+            isKeyboardVisible: false, 
+            selectedPasien: null, 
+            selectedRumus: null,
+            showFormRumus: false,
+            showDetailAnalisa: false,
+            isBleConnecting: false,
+            isBleConnectingTimbangan: false
+        });
+
+        const config = reactive({ 
+            appName: 'ANALISA TENSI', 
+            logoUrl: 'https://drive.google.com/thumbnail?id=1g7iMT64M6KUk7No6D-rWu_B71uJtCKsR' 
+        });
+
+        const auth = reactive({ user: null });
+        const data = reactive({ records: [], rumusRecords: [] });
+        
+        const form = reactive({ 
+            nama: '', jenis_kelamin: '', usia: null, whatsapp: null, 
+            sistolik: null, diastolik: null, detak_jantung: null, berat_badan: null, keluhan: '' 
+        });
+        
+        const loginForm = reactive({ username: '', password: '', showPassword: false });
+
+        const formRumus = reactive({ id: '', kategori: '', rumus: '', pesan: '', warna: 'emerald' });
+
+        const sortedRecords = computed(() => {
+            if (!Array.isArray(data.records)) return [];
+            return [...data.records].sort((a, b) => {
+                const timeA = new Date(String(a.tanggal || '').replace(' ', 'T')).getTime() || 0;
+                const timeB = new Date(String(b.tanggal || '').replace(' ', 'T')).getTime() || 0;
+                return timeB - timeA;
+            });
+        });
+
+        const formatDate = (iso) => {
+            if (!iso || iso === '-') return '-';
+            try {
+                const d = new Date(String(iso).replace(' ', 'T'));
+                if (isNaN(d.getTime())) return String(iso);
+                return d.toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }).toUpperCase();
+            } catch(e) { return String(iso); }
+        };
+
+        const formatPesanUI = (text) => {
+            if (!text) return '';
+            return String(text).replace(/##TITLE##(.*?)##ENDTITLE##/g, '<span class="block mt-4 mb-1 text-[11px] font-black text-emerald-400 tracking-widest border-b border-emerald-900/30 pb-1">$1</span>');
+        };
+
+        const getColorClass = (color) => {
+            const map = {
+                emerald: 'bg-emerald-500 text-emerald-500',
+                yellow: 'bg-yellow-500 text-yellow-500',
+                orange: 'bg-orange-500 text-orange-500',
+                red: 'bg-red-500 text-red-500',
+                rose: 'bg-rose-500 text-rose-500'
+            };
+            return map[color] || map['emerald'];
+        };
+
+        const getDetailPesan = (pasien) => {
+            if (!pasien) return '';
+            let pesanArr = [];
+
+            // Analisa Tensi Saja
+            const hasTensiData = (pasien.usia && pasien.usia !== '-' && 
+                                  pasien.sistolik && pasien.sistolik !== '-' && 
+                                  pasien.diastolik && pasien.diastolik !== '-' && 
+                                  pasien.detak_jantung && pasien.detak_jantung !== '-' && 
+                                  pasien.berat_badan && pasien.berat_badan !== '-');
+
+            const sis = parseInt(pasien.sistolik) || 0;
+            const dia = parseInt(pasien.diastolik) || 0;
+            const hr = parseInt(pasien.detak_jantung) || 0;
+            const bb = parseInt(pasien.berat_badan) || 0;
+            const usia = parseInt(pasien.usia) || 0;
+            const jk = pasien.jenis_kelamin || '';
+
+            if (hasTensiData) {
+                let matchedTensi = [];
+                if (Array.isArray(data.rumusRecords) && data.rumusRecords.length > 0) {
+                    for (let r of data.rumusRecords) {
+                        try {
+                            const checkRules = new Function('sis', 'dia', 'hr', 'bb', 'jk', 'usia', `return ${r.rumus};`);
+                            if (checkRules(sis, dia, hr, bb, jk, usia)) {
+                                matchedTensi.push(`##TITLE##ANALISA TENSI: ${String(r.kategori).toUpperCase()}##ENDTITLE##\n${r.pesan}`);
+                            }
+                        } catch(e) {}
+                    }
+                }
+                if (matchedTensi.length > 0) {
+                    pesanArr.push(matchedTensi.join('\n\n'));
+                } else {
+                    pesanArr.push(`##TITLE##ANALISA TENSI##ENDTITLE##\nTidak ada kriteria rumus keilmuan yang sesuai dengan data biometrik ini.`);
+                }
+            } else if (pasien.keluhan && pasien.keluhan !== '-') {
+                pesanArr.push(`##TITLE##KELUHAN##ENDTITLE##\n${pasien.keluhan}\n\n(Data parameter tensi tidak lengkap untuk dianalisa)`);
+            }
+
+            return pesanArr.join('\n\n');
+        };
+
+        const computedDetailPesan = computed(() => {
+            try {
+                return getDetailPesan(ui.selectedPasien);
+            } catch(e) {
+                console.error("Computation Safe Guard:", e);
+                return "Gagal memuat hasil perhitungan. Mohon periksa rumus atau data.";
+            }
+        });
+
+        const connectBluetooth = async () => {
+            if (!navigator.bluetooth) {
+                ui.toast = { message: "Browser tidak mendukung Web Bluetooth. Gunakan Chrome/Edge versi terbaru.", icon: "fa-solid fa-triangle-exclamation" };
+                setTimeout(() => ui.toast = null, 4000);
+                return;
+            }
+            ui.isBleConnecting = true;
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: ['blood_pressure'] }],
+                    optionalServices: ['generic_access', 'generic_attribute']
+                });
+
+                ui.toast = { message: "Menghubungkan ke " + (device.name || "Perangkat") + "...", icon: "fa-brands fa-bluetooth-b" };
+
+                // Antisipasi auto-disconnect dari perangkat keras
+                device.addEventListener('gattserverdisconnected', () => {
+                    ui.isBleConnecting = false;
+                });
+
+                const server = await device.gatt.connect();
+                
+                // Segera ambil akses sensor tanpa diblokir oleh sistem notifikasi
+                const service = await server.getPrimaryService('blood_pressure');
+                const characteristic = await service.getCharacteristic('blood_pressure_measurement');
+
+                ui.toast = { message: "Pairing berhasil! Mendapatkan sensor...", icon: "fa-solid fa-link" };
+
+                // Simpan Perangkat ke Database secara Asinkron (di latar belakang)
+                storage.save('Devices', {
+                    id: device.id || 'BLE_BP_' + Date.now().toString(),
+                    deviceId: device.id || '-',
+                    deviceName: device.name || 'Perangkat Tensi',
+                    deviceType: 'Blood Pressure',
+                    lastConnected: new Date().toISOString()
+                }).catch(e => console.error("Gagal simpan Device:", e));
+
+                // Memberi instruksi ke pengguna (Pesan berubah jika data belum masuk dalam 1.5 detik)
+                let dataReceived = false;
+                setTimeout(() => { 
+                    if(!dataReceived) ui.toast = { message: "Ukur tensi sekarang, menunggu data...", icon: "fa-solid fa-stopwatch" };
+                }, 1500);
+
+                characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                    try {
+                        dataReceived = true;
+                        const view = event.target.value;
+                        if (view.byteLength < 2) return;
+
+                        const flags = view.getUint8(0);
+                        let sys = 0, dia = 0, pr = 0;
+
+                        const getSFloat = (v, offset) => {
+                            if (offset + 1 >= v.byteLength) return 0;
+                            const raw = v.getUint16(offset, true);
+                            let mantissa = raw & 0x0FFF;
+                            if (mantissa >= 0x0800) mantissa -= 0x1000; // Koreksi bit negatif standar alat medis
+                            let expo = raw >> 12;
+                            if (expo >= 8) expo -= 16;
+                            return Math.round(mantissa * Math.pow(10, expo));
+                        };
+
+                        sys = getSFloat(view, 1);
+                        dia = getSFloat(view, 3);
+
+                        let offset = 7;
+                        if ((flags & 0x02) !== 0) offset += 7; // Timestamp
+                        if ((flags & 0x04) !== 0) pr = getSFloat(view, offset);
+
+                        // --- YUWELL BP-YE630CR & NON-STANDARD DEVICE FALLBACK ---
+                        if (sys <= 0 || sys > 300 || isNaN(sys)) {
+                            // Alat Yuwell sering mengirim data sebagai Integer mentah (Uint16) tanpa format eksponen SFLOAT
+                            sys = view.getUint16(1, true);
+                            dia = view.getUint16(3, true);
+                            
+                            if (view.byteLength >= offset + 2) {
+                                pr = view.getUint16(offset, true);
+                            }
+                            
+                            // Jika Uint16 masih kacau, coba baca byte per byte (Uint8) 
+                            // karena beberapa tipe Yuwell menggunakan offset 1, 2, dan urutan byte akhir
+                            if (sys <= 0 || sys > 300) {
+                                sys = view.getUint8(1);
+                                dia = view.getUint8(3); // Kadang di offset 2 atau 3
+                                if (dia <= 0 || dia > 200 && view.byteLength > 2) dia = view.getUint8(2); 
+                                pr = view.byteLength >= 4 ? view.getUint8(view.byteLength - 1) : 0;
+                            }
+                        }
+
+                        if (sys > 0) form.sistolik = sys;
+                        if (dia > 0) form.diastolik = dia;
+                        if (pr > 0) form.detak_jantung = pr;
+
+                        ui.toast = { message: "Data tensi berhasil disinkronisasi!", icon: "fa-solid fa-check-circle" };
+                        ui.isBleConnecting = false;
+
+                        // Beri jeda aman sebelum memutus koneksi
+                        setTimeout(() => {
+                            if (ui.toast && ui.toast.message.includes('disinkronisasi')) ui.toast = null;
+                            if (device.gatt.connected) device.gatt.disconnect();
+                        }, 2000);
+
+                    } catch (err) {
+                        console.error("BLE Data Parse Error:", err);
+                        ui.isBleConnecting = false;
+                    }
+                });
+
+                await characteristic.startNotifications();
+            } catch (error) {
+                console.error(error);
+                let errMsg = "Koneksi BLE gagal atau terputus.";
+                if (error.name === 'NotFoundError') errMsg = "Pencarian perangkat dibatalkan.";
+                else if (error.name === 'SecurityError' || String(error.message).includes('permissions policy')) {
+                    errMsg = "Sistem memblokir akses Bluetooth.";
+                    alert("Akses Bluetooth Ditolak. Pastikan aplikasi ini telah di-hosting dan dijalankan di luar lingkungan Google Apps Script.");
+                }
+                ui.toast = { message: errMsg, icon: "fa-solid fa-xmark" };
+                setTimeout(() => ui.toast = null, 4000);
+                ui.isBleConnecting = false;
+            }
+        };
+
+        const connectTimbangan = async () => {
+            if (window.top !== window.self) {
+                window.open(window.location.href, '_blank');
+                return;
+            }
+
+            if (!navigator.bluetooth) {
+                ui.toast = { message: "Browser tidak mendukung Web Bluetooth. Gunakan Chrome/Edge versi terbaru.", icon: "fa-solid fa-triangle-exclamation" };
+                setTimeout(() => ui.toast = null, 4000);
+                return;
+            }
+            ui.isBleConnectingTimbangan = true;
+            try {
+                // Modifikasi: Menambahkan ID Proprietary 0xFFF0 dan 0xFFE0 ke daftar permintaan 
+                // agar sistem tidak memblokir akses jika timbangan bukan merek internasional
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: ['weight_scale', 'body_composition', 'generic_access', 'generic_attribute', 0xFFF0, 0xFFE0]
+                });
+
+                ui.toast = { message: "Menghubungkan ke " + (device.name || "Timbangan") + "...", icon: "fa-brands fa-bluetooth-b" };
+
+                // Simpan Perangkat ke Database diawal secara Asinkron
+                storage.save('Devices', {
+                    id: device.id || 'BLE_WS_' + Date.now().toString(),
+                    deviceId: device.id || '-',
+                    deviceName: device.name || 'Timbangan',
+                    deviceType: 'Weight Scale',
+                    lastConnected: new Date().toISOString()
+                }).catch(e => console.error("Gagal simpan Device:", e));
+
+                device.addEventListener('gattserverdisconnected', () => {
+                    ui.isBleConnectingTimbangan = false;
+                });
+
+                const server = await device.gatt.connect();
+                
+                // Jeda stabilisasi untuk perangkat yang lambat merespon koneksi GATT
+                await new Promise(resolve => setTimeout(resolve, 800));
+                
+                // MENCARI SENSOR (Standard Medis vs Proprietary/Onemed/China)
+                let service = null;
+                let characteristic = null;
+                let isStandard = true;
+
+                try {
+                    // 1. Coba Protokol Standard ('weight_scale' 181D)
+                    service = await server.getPrimaryService('weight_scale');
+                    characteristic = await service.getCharacteristic('weight_measurement');
+                } catch (err) {
+                    console.log("Sensor standar tidak ditemukan. Mencoba mem-bypass protokol timbangan proprietary...");
+                    try {
+                        // 2. Coba Protokol Timbangan Generik (Tuya/Onemed) - 0xFFF0
+                        service = await server.getPrimaryService(0xFFF0);
+                        const chars = await service.getCharacteristics();
+                        characteristic = chars.find(c => c.properties.notify || c.properties.indicate);
+                        if (!characteristic) throw new Error("Tidak dapat memantau data (No Notify)");
+                        isStandard = false;
+                    } catch (err2) {
+                        try {
+                            // 3. Fallback terakhir - 0xFFE0
+                            service = await server.getPrimaryService(0xFFE0);
+                            const chars = await service.getCharacteristics();
+                            characteristic = chars.find(c => c.properties.notify || c.properties.indicate);
+                            if (!characteristic) throw new Error("Tidak dapat memantau data (No Notify)");
+                            isStandard = false;
+                        } catch (err3) {
+                            throw new Error("Protokol Bluetooth alat ini benar-benar tidak didukung aplikasi.");
+                        }
+                    }
+                }
+
+                ui.toast = { message: "Pairing berhasil! Mendapatkan sensor...", icon: "fa-solid fa-link" };
+
+                // Memberi instruksi ke pengguna
+                let dataReceived = false;
+                let consecutiveWeightCount = 0;
+                let lastWeightRead = 0;
+
+                setTimeout(() => {
+                    if(!dataReceived) ui.toast = { message: "Naik ke timbangan sekarang...", icon: "fa-solid fa-weight-scale" };
+                }, 1500);
+
+                characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                    try {
+                        const view = event.target.value;
+                        if (view.byteLength < 3) return;
+                        
+                        let weightKg = 0;
+
+                        if (isStandard) {
+                            // --- PARSING DATA STANDARD ---
+                            const flags = view.getUint8(0);
+                            const isImperial = (flags & 0x01) !== 0; // Cek satuan
+                            const rawWeight = view.getUint16(1, true); // Little endian
+                            
+                            if (isImperial) {
+                                weightKg = (rawWeight / 100) * 0.453592; // lbs -> kg
+                            } else {
+                                weightKg = rawWeight * 0.005; // Standard SI resolution 0.005 kg
+                            }
+                        } else {
+                            // --- PARSING DATA PROPRIETARY (Onemed/Generic) ---
+                            let possibleWeight = 0;
+                            let unitFlag = view.byteLength > 1 ? view.getUint8(1) : 0;
+                            
+                            // MISTERI TERPECAHKAN: 
+                            // 19.7 (197) adalah 0x00C5. 70.9 (709) adalah 0x02C5.
+                            // Alat mengirim LSB di byte 3 (0xC5) dan MSB di byte 4 (0x02).
+                            // Jadi format aslinya adalah Little Endian di offset 3!
+                            const offsets = [
+                                { idx: 3, be: true },  // Prioritas 1: Little Endian offset 3 (Onemed iF2050A / Tuya)
+                                { idx: 1, be: true },  // Prioritas 2: Little Endian offset 1 (Generic BLE)
+                                { idx: 4, be: false }, // Prioritas 3: Big Endian offset 4 (LeaOne fallback)
+                                { idx: 2, be: false }  // Prioritas 4: Big Endian offset 2 (Tuya fallback)
+                            ];
+
+                            for (let off of offsets) {
+                                if (view.byteLength >= off.idx + 2) {
+                                    let raw = view.getUint16(off.idx, off.be);
+                                    
+                                    // Timbangan biasanya mengirim angka x100 atau x10
+                                    let w = 0;
+                                    if (raw >= 1000 && raw <= 30000) {
+                                        w = raw / 100;
+                                    } else if (raw >= 100 && raw < 1000) {
+                                        w = raw / 10;
+                                    }
+
+                                    // Filter agar hanya memproses angka yang realistis sebagai berat badan
+                                    if (w >= 3.0 && w <= 250.0) {
+                                        // Paksa ke KG jika alat diset ke LBS/JIN
+                                        if (unitFlag === 2 || unitFlag === 0x12) w = w * 0.453592;
+                                        else if (unitFlag === 1 || unitFlag === 0x11) w = w * 0.5;
+                                        
+                                        possibleWeight = w;
+                                        break; 
+                                    }
+                                }
+                            }
+                            weightKg = possibleWeight;
+                        }
+
+                        // Filter dan stabilisasi angka
+                        if (weightKg >= 3.0) {
+                            if (isStandard) {
+                                if (!dataReceived) {
+                                    dataReceived = true;
+                                    form.berat_badan = parseFloat(weightKg.toFixed(1));
+                                    ui.toast = { message: "Data berat badan berhasil disinkronisasi!", icon: "fa-solid fa-check-circle" };
+                                    ui.isBleConnectingTimbangan = false;
+
+                                    setTimeout(() => {
+                                        if (ui.toast && ui.toast.message.includes('disinkronisasi')) ui.toast = null;
+                                        if (device.gatt.connected) device.gatt.disconnect();
+                                    }, 2000);
+                                }
+                            } else {
+                                // Mekanisme Anti-Noise & Stabilisasi untuk Timbangan Onemed
+                                let diff = Math.abs(weightKg - lastWeightRead);
+                                if (diff <= 0.3) { // Toleransi perubahan diturunkan agar lebih akurat
+                                    consecutiveWeightCount++;
+                                } else {
+                                    consecutiveWeightCount = 1;
+                                    lastWeightRead = weightKg;
+                                }
+
+                                // Update UI secara realtime
+                                if (!dataReceived) {
+                                    form.berat_badan = parseFloat(weightKg.toFixed(1));
+                                }
+
+                                // Dipercepat: Jika angka stabil 2x berturut-turut, anggap final
+                                if (consecutiveWeightCount >= 2 && !dataReceived) {
+                                    dataReceived = true;
+                                    form.berat_badan = parseFloat(weightKg.toFixed(1));
+                                    ui.toast = { message: "Data berat badan stabil & disinkronisasi!", icon: "fa-solid fa-check-circle" };
+                                    ui.isBleConnectingTimbangan = false;
+
+                                    setTimeout(() => {
+                                        if (ui.toast && ui.toast.message.includes('disinkronisasi')) ui.toast = null;
+                                        if (device.gatt.connected) device.gatt.disconnect();
+                                    }, 1500);
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.error("BLE Data Parse Error:", err);
+                        // Sengaja tidak mengubah state menjadi false di sini
+                        // Agar aplikasi tetap mendengarkan jika ada data yang corrupt terlewat
+                    }
+                });
+
+                await characteristic.startNotifications();
+            } catch (error) {
+                console.error("Connection Detailed Error:", error);
+                let errMsg = "Koneksi BLE gagal atau terputus.";
+                if (error.name === 'NotFoundError') errMsg = "Pencarian dibatalkan (atau pastikan bukan alat lain).";
+                else if (String(error.message).includes('tidak didukung')) errMsg = error.message;
+                else if (error.name === 'SecurityError' || String(error.message).includes('permissions policy')) {
+                    errMsg = "Sistem memblokir akses Bluetooth.";
+                    alert("Akses Bluetooth Ditolak. Pastikan aplikasi ini telah di-hosting dan dijalankan di luar lingkungan Google Apps Script.");
+                }
+                ui.toast = { message: errMsg, icon: "fa-solid fa-xmark" };
+                setTimeout(() => ui.toast = null, 4000);
+                ui.isBleConnectingTimbangan = false;
+            }
+        };
+
+        const processAnalisa = async () => {
+            if(ui.loading) return;
+            const sis = parseInt(form.sistolik) || 0;
+            const dia = parseInt(form.diastolik) || 0;
+            const hr = parseInt(form.detak_jantung) || 0;
+            const bb = parseInt(form.berat_badan) || 0;
+            const usia = parseInt(form.usia) || 0;
+            const jk = form.jenis_kelamin || '';
+
+            const hasData = (form.keluhan.length > 0) || (sis > 0);
+            
+            if (!hasData) { 
+                ui.toast = { message: "Isi data pasien terlebih dahulu!", icon: "fa-solid fa-circle-xmark" };
+                setTimeout(() => ui.toast = null, 3000);
+                return; 
+            }
+
+            ui.loading = true;
+            try {
+                let kategoriData = 'BELUM DIANALISA';
+                const hasTensiData = (form.usia && form.sistolik && form.diastolik && form.detak_jantung && form.berat_badan);
+
+                if (hasTensiData && Array.isArray(data.rumusRecords)) {
+                    let matchedKategori = [];
+                    for (let r of data.rumusRecords) {
+                        try {
+                            const checkRules = new Function('sis', 'dia', 'hr', 'bb', 'jk', 'usia', `return ${r.rumus};`);
+                            if (checkRules(sis, dia, hr, bb, jk, usia)) {
+                                matchedKategori.push(r.kategori);
+                            }
+                        } catch(e) {}
+                    }
+                    if (matchedKategori.length > 0) kategoriData = matchedKategori.join(' | ');
+                    else kategoriData = 'TIDAK TERDEFINISI (CEK RUMUS)';
+                } else if (form.keluhan.length > 0) {
+                    kategoriData = 'HANYA KELUHAN';
+                }
+
+                const payload = { 
+                    id: Date.now().toString(), 
+                    tanggal: new Date().toISOString(), 
+                    nama: form.nama || 'Anonim', 
+                    jenis_kelamin: form.jenis_kelamin || '-', 
+                    usia: form.usia ? form.usia.toString() : '-', 
+                    whatsapp: form.whatsapp ? form.whatsapp.toString() : '-', 
+                    sistolik: form.sistolik ? form.sistolik.toString() : '-', 
+                    diastolik: form.diastolik ? form.diastolik.toString() : '-', 
+                    detak_jantung: form.detak_jantung ? form.detak_jantung.toString() : '-', 
+                    berat_badan: form.berat_badan ? form.berat_badan.toString() : '-', 
+                    keluhan: form.keluhan || '-', 
+                    kategori: kategoriData 
+                };
+                
+                await storage.save('Analisa', payload);
+                data.records.push(payload);
+                
+                ui.toast = { message: "Analisa berhasil disimpan", icon: "fa-solid fa-check" };
+                setTimeout(() => ui.toast = null, 3000);
+                
+                Object.assign(form, { nama: '', jenis_kelamin: '', usia: null, whatsapp: null, sistolik: null, diastolik: null, detak_jantung: null, berat_badan: null, keluhan: '' });
+            } catch (e) {
+                console.error(e);
+                ui.toast = { message: "Gagal menyimpan data", icon: "fa-solid fa-xmark" };
+                setTimeout(() => ui.toast = null, 3000);
+            } finally { ui.loading = false; }
+        };
+
+        const processLogin = async () => {
+            if(ui.loading) return;
+            if(!loginForm.username || !loginForm.password) return;
+            ui.loading = true;
+            try {
+                auth.user = await storage.call('login', loginForm.username, loginForm.password);
+                localStorage.setItem('auth_token_tensi', JSON.stringify(auth.user));
+                ui.activeView = 'pasien';
+            } catch(e) {
+                ui.toast = { message: "Login gagal!", icon: "fa-solid fa-xmark" };
+                setTimeout(() => ui.toast = null, 3000);
+            } finally { ui.loading = false; }
+        };
+
+        const processLogout = () => { 
+            if(confirm('Akhiri sesi otoritas?')) {
+                auth.user = null; 
+                localStorage.removeItem('auth_token_tensi'); 
+                ui.activeView = 'public'; 
+            }
+        };
+
+        const checkKeyboard = () => {
+            document.addEventListener('focusin', (e) => {
+                if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) ui.isKeyboardVisible = true;
+            });
+            document.addEventListener('focusout', () => {
+                setTimeout(() => { ui.isKeyboardVisible = false; }, 100);
+            });
+        };
+
+        onMounted(async () => {
+            history.pushState(null, null, location.href);
+            window.addEventListener('popstate', function(event) {
+                if (confirm('Apakah ingin keluar aplikasi?')) {
+                    window.history.back();
+                } else {
+                    history.pushState(null, null, location.href);
+                }
+            });
+            checkKeyboard();
+            try {
+                const stored = localStorage.getItem('auth_token_tensi');
+                if(stored) auth.user = JSON.parse(stored);
+                
+                // Gunakan timeout agar jika fetch awal gagal, tidak memblokir UI
+                const initial = await Promise.race([
+                    storage.call('getInitialData'),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Init Timeout')), 15000))
+                ]);
+                
+                if(initial && initial.records) { 
+                    data.records = initial.records;
+                    data.rumusRecords = initial.rumusRecords || [];
+                }
+            } catch (err) {
+                console.error("Init Notice:", err);
+            } finally {
+                setTimeout(() => { ui.splash = false; }, 500);
+            }
+        });
+
+        // --- EXPORT KE TEMPLATE ---
+        return {
+            ui, config, auth, form, data, sortedRecords, formatDate, formatPesanUI, getColorClass, loginForm, computedDetailPesan,
+            processAnalisa, connectBluetooth, connectTimbangan, openDetail: (r) => { ui.selectedPasien = r; ui.showDetailAnalisa = false; ui.activeView = 'detail_pasien'; },
+            runDetailAnalisa: () => { ui.showDetailAnalisa = true; ui.toast = { message: "Sistem memuat analisa...", icon: "fa-solid fa-microchip" }; setTimeout(() => ui.toast = null, 2000); },
+            getDetailPesan, processLogin, processLogout,
+            handleLogoError: (e) => { e.target.src = 'https://www.freeiconspng.com/uploads/heart-icon-14.png'; },
+            scrollToView: (e) => { if(e?.target) e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }); },
+            
+            formRumus,
+            openDetailRumus: (r)=> { ui.selectedRumus=r; ui.activeView='detail_rumus'; }, 
+            editRumus: (r)=> { Object.assign(formRumus, r); ui.showFormRumus=true; ui.activeView='database_tensi'; },
+            confirmDeleteRumus: async (id) => { 
+                if(ui.loading) return;
+                if(confirm('Hapus rumus ini?')) { 
+                    ui.loading = true;
+                    try {
+                        await storage.call('deleteRumus', id, auth.user?.username); 
+                        data.rumusRecords = data.rumusRecords.filter(r => r.id !== id); 
+                        ui.activeView = 'database_tensi'; 
+                        ui.toast = { message: "Rumus dihapus", icon: "fa-solid fa-check" };
+                        setTimeout(() => ui.toast = null, 3000);
+                    } catch(e) { console.error(e); } finally { ui.loading = false; }
+                } 
+            },
+            resetFormRumus: () => { Object.assign(formRumus, { id: '', kategori: '', rumus: '', pesan: '', warna: 'emerald' }); },
+            processSaveRumus: async () => { 
+                if(ui.loading) return;
+                ui.loading = true;
+                try {
+                    const payload = JSON.parse(JSON.stringify({...formRumus, id: formRumus.id || Date.now().toString()}));
+                    await storage.save('Rumus_Tensi', payload); 
+                    const idx = data.rumusRecords.findIndex(x => x.id === payload.id);
+                    if (idx > -1) data.rumusRecords[idx] = payload; else data.rumusRecords.push(payload);
+                    ui.showFormRumus=false; 
+                    ui.toast = { message: "Rumus disimpan", icon: "fa-solid fa-check" };
+                    setTimeout(() => ui.toast = null, 3000);
+                    Object.assign(formRumus, { id: '', kategori: '', rumus: '', pesan: '', warna: 'emerald' });
+                } catch(e) { console.error(e); } finally { ui.loading = false; }
+            },
+            
+            kirimWA: () => {
+                if (!ui.selectedPasien) return;
+                const p = ui.selectedPasien;
+                let pesanAnalisa = getDetailPesan(p).replace(/##TITLE##(.*?)##ENDTITLE##/g, '*$1*').replace(/<a href="(.*?)"[^>]*>(.*?)<\/a>/g, '$2: $1').replace(/<[^>]*>?/gm, '');
+                let text = `*HASIL ANALISA BIOMETRIK*\n\n*IDENTITAS*\nNama: ${p.nama}\nUsia: ${p.usia} Tahun\nJenis Kelamin: ${p.jenis_kelamin}\n\n*PARAMETER*\nTensi: ${p.sistolik}/${p.diastolik} mmHg\nDetak Jantung: ${p.detak_jantung} bpm\nBerat Badan: ${p.berat_badan} kg\n\n*DIAGNOSA*\nDetail Keluhan: ${p.keluhan || '-'}\n\n*HASIL ANALISA SISTEM*\n\n${pesanAnalisa}`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+            },
+            confirmDeleteDetail: async (id) => { 
+                if(ui.loading) return;
+                if(confirm('Hapus data pasien ini?')) { 
+                    ui.loading = true;
+                    try {
+                        await storage.call('deleteAnalisa', id, auth.user?.username); 
+                        data.records = data.records.filter(r => r.id !== id); 
+                        ui.activeView = 'pasien'; 
+                        ui.toast = { message: "Data dihapus", icon: "fa-solid fa-check" };
+                        setTimeout(() => ui.toast = null, 3000);
+                    } catch(e) { console.error(e); } finally { ui.loading = false; }
+                } 
+            }
+        };
+    }
+});
+
+app.config.errorHandler = (err, instance, info) => {
+    console.error("Global Fallback Error:", err, info);
+    alert("Terjadi kegagalan sinkronisasi memori. Sistem mencoba mengembalikan status yang aman...");
+};
+
+app.mount('#app');
+</script>
+
+<script>
+    // Failsafe Splash Screen
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            const splash = document.getElementById('splash-screen');
+            if(splash) splash.remove();
+            const a = document.getElementById('app');
+            if(a) a.removeAttribute('v-cloak');
+        }, 4000);
+    });
+</script>
+</body>
+</html>
